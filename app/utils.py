@@ -6,7 +6,7 @@ import json
 from sqlalchemy import create_engine
 from urllib.request import urlopen
 
-# --- CONFIGURAÇÃO DE TEMA ---
+# --- CONFIGURAÇÃO DE TEMA (CLARO/ESCURO) ---
 def get_tema_config(tema_selecionado):
     if tema_selecionado == "Escuro":
         return {
@@ -78,25 +78,16 @@ def carregar_dados_gerais():
             try: df_mun = pd.read_sql("SELECT * FROM stats_municipios", conn)
             except: df_mun = pd.DataFrame()
 
-            df_raw_prod = pd.DataFrame()
-            base_app = os.path.dirname(os.path.abspath(__file__))
-            base_projeto = os.path.dirname(base_app)
-            path_prod = os.path.join(base_projeto, 'Planilhas', 'Produtos.csv')
-            if os.path.exists(path_prod):
-                try: df_raw_prod = pd.read_csv(path_prod, dtype=str, encoding='utf-8', sep=None, engine='python')
-                except: pass
-            
-            return df_mapa, df_org.fillna("-"), df_prod.fillna(0), df_status.fillna(0), df_users.fillna("-"), df_raw_prod, df_mun
+            return df_mapa, df_org.fillna("-"), df_prod.fillna(0), df_status.fillna(0), df_users.fillna("-"), pd.DataFrame(), df_mun
     except Exception as e:
         return (pd.DataFrame(),)*7
 
-# --- CARREGAMENTO PRF (COMPLETO) ---
+# --- CARREGAMENTO PRF ---
 @st.cache_data(ttl=3600, show_spinner="Carregando base PRF completa...")
 def carregar_dados_prf():
     try:
         engine = create_engine('mysql+pymysql://root:Jjjb3509@127.0.0.1:3306/db_pnatrans')
         with engine.connect() as conn:
-            # Lista explícita de colunas para garantir que MARCA e TIPO_VEICULO venham
             cols = """
                 ID, PESID, DATA_INVERSA, DIA_SEMANA, HORARIO, UF, BR, KM, MUNICIPIO,
                 CAUSA_PRINCIPAL, TIPO_ACIDENTE, CLASSIFICACAO_ACIDENTE, FASE_DIA,
@@ -106,11 +97,8 @@ def carregar_dados_prf():
                 ILESOS, FERIDOS_LEVES, FERIDOS_GRAVES, MORTOS, FERIDOS,
                 LATITUDE, LONGITUDE, REGIONAL, DELEGACIA, UOP, ANO, MES
             """
-            try:
-                df = pd.read_sql(f"SELECT {cols} FROM acidentes_prf", conn)
-            except:
-                # Fallback se der erro nas colunas
-                df = pd.read_sql("SELECT * FROM acidentes_prf", conn)
+            try: df = pd.read_sql(f"SELECT {cols} FROM acidentes_prf", conn)
+            except: df = pd.read_sql("SELECT * FROM acidentes_prf", conn)
             
             if not df.empty:
                 cols_int = ['ANO', 'MES', 'IDADE', 'ILESOS', 'FERIDOS_LEVES', 'FERIDOS_GRAVES', 'MORTOS', 'FERIDOS', 'ANO_FABRICACAO_VEICULO']
@@ -124,7 +112,6 @@ def carregar_dados_prf():
             
             return df.fillna("NÃO INFORMADO")
     except Exception as e:
-        st.error(f"Erro ao carregar PRF: {e}")
         return pd.DataFrame()
 
 # --- CARREGAMENTO OBITOS ---
@@ -135,6 +122,30 @@ def carregar_dados_obitos():
         with engine.connect() as conn:
             return pd.read_sql("SELECT * FROM obitos_transporte", conn)
     except: return pd.DataFrame()
+
+# --- CARREGAMENTO POPULAÇÃO ---
+@st.cache_data(ttl=3600)
+def carregar_populacao():
+    try:
+        engine = create_engine('mysql+pymysql://root:Jjjb3509@127.0.0.1:3306/db_pnatrans')
+        with engine.connect() as conn:
+            df = pd.read_sql("SELECT uf, municipio, populacao FROM populacao_ibge", conn)
+            df['municipio_norm'] = df['municipio'].str.upper().str.strip()
+            df['uf_norm'] = df['uf'].str.upper().str.strip()
+            return df
+    except:
+        return pd.DataFrame()
+
+# --- CARREGAMENTO CAPACITAÇÕES (NOVO) ---
+@st.cache_data(ttl=300)
+def carregar_capacitacoes():
+    try:
+        engine = create_engine('mysql+pymysql://root:Jjjb3509@127.0.0.1:3306/db_pnatrans')
+        with engine.connect() as conn:
+            df = pd.read_sql("SELECT * FROM capacitacoes ORDER BY DATA_CAPACITACAO DESC", conn)
+            return df
+    except:
+        return pd.DataFrame()
 
 @st.cache_data
 def carregar_geojson():
